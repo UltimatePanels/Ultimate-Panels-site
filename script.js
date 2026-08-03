@@ -4,7 +4,7 @@
 /* ============================================================
    API CONFIGURATION
    ============================================================ */
-const API_BASE_URL = 'https://up-backend-uv35.onrender.com';
+const API_BASE_URL = 'https://up-backend-zl41.onrender.com';
 const API_TOKEN_KEY = 'ultimate_panels_token';
 const ADMIN_SESSION_KEY = 'ultimate_panels_admin_token';
 const USER_PERSIST_SESSION_KEY = 'ultimate_panels_user_persist_session';
