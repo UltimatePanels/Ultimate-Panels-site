@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>Ultimate Panels — Comic Reader</title>
+<meta name="description" content="A premium, iOS-styled comic reading web app.">
+
+
+<link rel="stylesheet" href="style.css">
+
+<script>
+/* ---- Early lang/theme resolution (runs before first paint) ----
+   Sets html[lang], html[dir] and html[data-theme] as early as possible so
+   the page never flashes the wrong language/direction/theme while the main
+   app script (further down) finishes loading. Mirrors — and is later
+   reconciled by — detectBrowserLang()/applyI18n()/applyTheme() in the main
+   script; this is a performance/FOUC optimization only, not a second source
+   of truth. Any saved settings (manual or previously auto-detected) always
+   win over fresh detection here, same as in the main script. */
+(function(){
+  try{
+    var raw = localStorage.getItem("ultimate_panels_state_v1");
+    var settings = (raw ? (JSON.parse(raw).settings) : null) || {};
+
+    var lang = settings.lang;
+    if(lang !== "en" && lang !== "fa"){
+      var candidates = (Array.isArray(navigator.languages) && navigator.languages.length)
+        ? navigator.languages
+        : [navigator.language || navigator.userLanguage || "en"];
+      lang = "en";
+      for(var i=0;i<candidates.length;i++){
+        var tag = candidates[i];
+        if(typeof tag === "string" && tag.toLowerCase().split("-")[0] === "fa"){ lang = "fa"; break; }
+      }
+    }
+    document.documentElement.lang = lang;
+    document.documentElement.dir = (lang === "fa") ? "rtl" : "ltr";
+
+    var theme = settings.theme;
+    if(theme !== "dark" && theme !== "light" && theme !== "system") theme = "system";
+    var effective = theme;
+    if(theme === "system"){
+      effective = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
+    }
+    document.documentElement.setAttribute("data-theme", effective);
+  }catch(e){
+    /* localStorage/JSON/matchMedia unavailable — the main script's init()
+       still runs applyI18n()/applyTheme() afterward and will correct this. */
+  }
+})();
+</script>
+</head>
+<body>
+
+<!-- ================= LOADING SCREEN ================= -->
+<div id="loading-screen" role="status" aria-live="polite">
+  <div class="loading-logo-wrap">
+    <div class="loading-logo-glow"></div>
+    <img class="loading-logo" id="loadingLogoImg" src="" alt="Ultimate Panels logo">
+  </div>
+  <div class="loading-title">Ultimate Panels</div>
+  <div class="loading-bar-track"><div class="loading-bar-fill" id="loadingBarFill"></div></div>
+  <div class="loading-caption" id="loadingCaption">Loading…</div>
+</div>
+
+<!-- ================= AUTH GATE (full-screen login — English only, blocks the app until signed in) ================= -->
+<div id="authGate" role="dialog" aria-modal="true" aria-label="Sign in">
+  <div class="auth-card">
+    <div class="auth-logo-wrap"><img class="auth-logo" id="authLogoImg" src="" alt="Ultimate Panels logo"></div>
+    <h1 class="auth-title">Ultimate Panels</h1>
+    <p class="auth-subtitle">Sign in to continue</p>
+
+    <div class="auth-panels">
+      <div class="auth-panel active" id="authPanelUser" role="tabpanel">
+        <div class="field">
+          <label for="gateUserUsername">Username</label>
+          <input type="text" id="gateUserUsername" autocomplete="username" placeholder="Username">
+        </div>
+        <div class="field">
+          <label for="gateUserPassword">Password</label>
+          <input type="password" id="gateUserPassword" autocomplete="current-password" placeholder="••••••••">
+        </div>
+        <div class="auth-error" id="gateUserError"></div>
+        <button class="btn btn-primary" id="gateUserSubmit">Sign In</button>
+        <button class="btn btn-ghost" id="guestContinueBtn" style="margin-top:10px;">Continue as Guest</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= HEADER ================= -->
+<header class="app-header">
+  <button class="icon-btn" id="settingsBtn" aria-label="Open settings" aria-haspopup="dialog">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+  <h1 id="headerTitle">Ultimate Panels</h1>
+</header>
+
+<!-- ================= MAIN VIEWS ================= -->
+<main id="mainScroll">
+
+  <!-- HOME -->
+  <section class="view active" id="view-home" aria-label="Home">
+    <div class="hero-card">
+      <h2 id="heroTitle">Welcome back</h2>
+      <p id="heroSub">Your library, always with you.</p>
+    </div>
+
+    <div class="stats-grid">
+      <div class="glass-card stat-card" style="animation-delay:.03s"><div class="num" id="statRead">0</div><div class="lbl" id="statReadLbl">In Progress</div></div>
+      <div class="glass-card stat-card" style="animation-delay:.08s"><div class="num" id="statPages">0</div><div class="lbl" id="statPagesLbl">Pages Read</div></div>
+    </div>
+
+    <h2 class="section-title first" id="continueTitle">Continue Reading</h2>
+    <div class="hscroll" id="continueRow"></div>
+  </section>
+
+  <!-- COMICS -->
+  <section class="view" id="view-comics" aria-label="Comics">
+    <div class="search-wrap">
+      <span class="search-icon" aria-hidden="true">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      </span>
+      <input type="search" class="search-box" id="searchInput" placeholder="Search comics…" aria-label="Search comics">
+      <button class="search-clear" id="searchClear" aria-label="Clear search">✕</button>
+    </div>
+    <div id="adminUploadBar" style="display:none; margin-bottom:16px;">
+      <button class="btn btn-primary" id="openUploadBtn">＋ Upload Comic</button>
+    </div>
+
+    <div class="accordion" id="popularAccordion">
+      <button class="accordion-header" id="popularToggle" aria-expanded="false" aria-controls="popularBody">
+        <span class="accordion-title" id="popularAccordionTitle">Most Popular Comics</span>
+        <span class="accordion-arrow" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </span>
+      </button>
+      <div class="accordion-body" id="popularBody">
+        <div class="accordion-body-inner">
+          <div class="comics-grid grid-3" id="popularGrid"></div>
+          <div class="empty-state" id="popularEmpty" style="display:none;">
+            <span class="emoji">📚</span><span id="popularEmptyText">No comics found</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="accordion" id="latestAccordion">
+      <button class="accordion-header" id="latestComicsToggle" aria-expanded="true" aria-controls="latestComicsBody">
+        <span class="accordion-title" id="latestAccordionTitle">Latest Comics</span>
+        <span class="accordion-arrow" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </span>
+      </button>
+      <div class="accordion-body open" id="latestComicsBody">
+        <div class="accordion-body-inner">
+          <div class="comics-grid grid-3" id="latestComicsGrid"></div>
+          <div class="empty-state" id="latestComicsEmpty" style="display:none;">
+            <span class="emoji">📚</span><span id="latestEmptyText">No comics found</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ABOUT -->
+  <section class="view" id="view-about" aria-label="About">
+    <img class="about-logo" id="aboutLogoImg" src="" alt="Ultimate Panels logo">
+    <h2 class="section-title first" style="text-align:center;" id="aboutAppName">Ultimate Panels</h2>
+    <div class="glass-card about-block">
+      <h3 id="aboutSiteHeading">About this app</h3>
+      <p id="aboutSiteText">Ultimate Panels is a clean, native-feeling place to keep and read your comic collection, right in the browser.</p>
+    </div>
+    <div class="glass-card" style="padding:4px 18px;">
+      <div class="about-row"><span id="labelDeveloper">Developer</span><span>Ultimate Panels Team</span></div>
+      <div class="about-row"><span id="labelVersion">Version</span><span>1.0.0</span></div>
+      <div class="about-row"><span id="labelLicense">License</span><span>MIT</span></div>
+    </div>
+    <div class="admin-trigger" id="adminTrigger">Ultimate Panels © 2026</div>
+  </section>
+
+</main>
+
+<!-- ================= TAB BAR ================= -->
+<nav class="tabbar" aria-label="Primary">
+  <button class="tab-btn active" data-view="home" aria-current="page">
+    <span class="tab-icon">🏠</span><span class="tab-label" id="tabHomeLbl">Home</span>
+    <span class="tab-indicator"></span>
+  </button>
+  <button class="tab-btn" data-view="comics">
+    <span class="tab-icon">📚</span><span class="tab-label" id="tabComicsLbl">Comics</span>
+    <span class="tab-indicator"></span>
+  </button>
+  <button class="tab-btn" data-view="about">
+    <span class="tab-icon">ℹ️</span><span class="tab-label" id="tabAboutLbl">About</span>
+    <span class="tab-indicator"></span>
+  </button>
+</nav>
+
+<!-- ================= SETTINGS SHEET ================= -->
+<div class="sheet-overlay" id="settingsOverlay" role="dialog" aria-modal="true" aria-labelledby="settingsHeading">
+  <div class="sheet" id="settingsSheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h2 id="settingsHeading">Settings</h2>
+      <button class="sheet-close" id="settingsClose" aria-label="Close settings">✕</button>
+    </div>
+
+    <div class="settings-group">
+      <h4 id="grpLanguage">Language</h4>
+      <div class="settings-row">
+        <div><div class="row-label" id="langRowLbl">Interface Language</div></div>
+        <div class="segmented" id="langSeg">
+          <button data-lang="en" class="active">EN</button>
+          <button data-lang="fa">فا</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h4 id="grpTheme">Theme</h4>
+      <div class="settings-row">
+        <div class="row-label" id="themeRowLbl">Appearance</div>
+        <div class="segmented" id="themeSeg">
+          <button data-theme="dark" id="themeOptDark">Dark</button>
+          <button data-theme="light" id="themeOptLight">Light</button>
+          <button data-theme="system" class="active" id="themeOptSystem">System</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="row-label" id="accentRowLbl">Accent Color</div>
+      </div>
+      <div class="color-swatches" id="accentSwatches" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="settings-group">
+      <h4 id="grpAnim">Animation</h4>
+      <div class="settings-row">
+        <div class="row-label" id="animRowLbl">Enable Animations</div>
+        <label class="switch"><input type="checkbox" id="animToggle" checked><span class="track"><span class="thumb"></span></span></label>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h4 id="grpReader">Reader</h4>
+      <div class="settings-row">
+        <div class="row-label" id="fitRowLbl">Page Fit</div>
+        <div class="segmented" id="fitSeg">
+          <button data-fit="contain" class="active">Fit</button>
+          <button data-fit="width">Width</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="row-label" id="dirRowLbl">Reading Direction</div>
+        <div class="segmented" id="dirSeg">
+          <button data-rtl="0" class="active">LTR</button>
+          <button data-rtl="1">RTL</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="row-label" id="rememberRowLbl">Remember Last Page</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="rememberToggle" checked><span class="track"><span class="thumb"></span></span></label>
+      </div>
+    </div>
+
+    <div class="settings-group" id="accountGroup">
+      <h4>Account</h4>
+      <div id="accountStatusRow" class="settings-row">
+        <div class="row-label" id="accountStatusLbl">Not signed in</div>
+        <button class="btn btn-ghost" style="width:auto; padding:8px 14px;" id="accountSignOutBtn">Sign Out</button>
+        <button class="btn btn-ghost" style="width:auto; padding:8px 14px;" id="accountSignInBtn">Sign In</button>
+      </div>
+      <div id="guestSettingsNotice" style="display:none; padding:10px 2px 2px; font-size:12px; color:var(--text-3); line-height:1.4;">Sign in to change settings and access your library.</div>
+    </div>
+
+    <div class="settings-group" id="adminCreateUserGroup" style="display:none;">
+      <h4>Administrator — Create User</h4>
+      <div class="field">
+        <label for="newUserUsername">Username</label>
+        <input type="text" id="newUserUsername" autocomplete="off" placeholder="New username">
+      </div>
+      <div class="field">
+        <label for="newUserPassword">Password</label>
+        <input type="password" id="newUserPassword" autocomplete="new-password" placeholder="New password">
+      </div>
+      <div class="auth-error" id="newUserError"></div>
+      <button class="btn btn-primary" id="createUserBtn" style="margin-bottom:16px;">Save Account</button>
+      <div class="row-label" style="margin-bottom:8px; font-size:12px; color:var(--text-3); text-transform:uppercase; letter-spacing:.5px;">Existing User Accounts</div>
+      <div id="adminUserList" style="display:flex; flex-direction:column; gap:6px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= UPLOAD / EDIT SHEET ================= -->
+<div class="sheet-overlay" id="editorOverlay" role="dialog" aria-modal="true" aria-labelledby="editorHeading">
+  <div class="sheet" id="editorSheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h2 id="editorHeading">Upload Comic</h2>
+      <button class="sheet-close" id="editorClose" aria-label="Close">✕</button>
+    </div>
+    <div class="field">
+      <label for="editTitle">Title</label>
+      <input type="text" id="editTitle" placeholder="Comic title">
+    </div>
+    <div style="display:flex; gap:10px;">
+      <div class="field" style="flex:1;"><label for="editVolume">Volume</label><input type="text" id="editVolume" placeholder="1"></div>
+      <div class="field" style="flex:1;"><label for="editIssue">Issue</label><input type="text" id="editIssue" placeholder="1"></div>
+    </div>
+    <div class="field">
+      <label for="editCoverInput">Cover Image</label>
+      <input type="file" id="editCoverInput" accept="image/*">
+    </div>
+    <div class="field">
+      <label for="editPagesInput">Pages (select multiple images — used in place of .cbr, see note below)</label>
+      <input type="file" id="editPagesInput" accept="image/*" multiple>
+      <div style="font-size:11px; color:var(--text-3); margin-top:6px;">True .cbr/RAR decoding needs an external library, which conflicts with the single-file vanilla-JS constraint — so pages are supplied as an image set instead.</div>
+    </div>
+    <button class="btn btn-primary" id="editorSave">Save Comic</button>
+  </div>
+</div>
+
+<!-- ================= COMIC READER ================= -->
+<div id="reader" aria-modal="true" role="dialog" aria-label="Comic reader">
+  <div class="reader-topbar">
+    <button class="reader-round-btn" id="readerClose" aria-label="Close reader">✕</button>
+    <div class="r-title" id="readerTitle">Title</div>
+    <button class="reader-round-btn" id="readerFullscreen" aria-label="Toggle fullscreen">⤢</button>
+  </div>
+  <div class="reader-stage" id="readerStage">
+    <div class="reader-track" id="readerTrack"></div>
+  </div>
+  <div class="reader-bottombar">
+    <div class="reader-progress-track"><div class="reader-progress-fill" id="readerProgressFill"></div></div>
+    <div class="reader-controls">
+      <div class="reader-nav-arrows">
+        <button class="reader-round-btn" id="readerPrev" aria-label="Previous page">‹</button>
+      </div>
+      <div class="reader-page-count" id="readerPageCount">1 / 1</div>
+      <div class="reader-nav-arrows">
+        <button class="reader-round-btn" id="readerNext" aria-label="Next page">›</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
